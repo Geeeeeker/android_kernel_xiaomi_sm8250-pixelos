@@ -143,12 +143,6 @@ jobs:
             arch/arm64/configs/vendor/xiaomi/sm8250-common.config \
             arch/arm64/configs/vendor/xiaomi/umi.config
 
-      # ========== 注释 zstd.o 避免 Btrfs 编译错误 ==========
-      - name: 注释 zstd.o 编译
-        working-directory: kernel
-        run: |
-          sed -i '/zstd\.o/s/^/# /' fs/btrfs/Makefile
-
       # ========== 修复触摸驱动缺失枚举 ==========
       - name: 补充触摸驱动缺失的 Touch_Wgh 枚举成员
         working-directory: kernel
@@ -165,20 +159,27 @@ jobs:
           else
             FTS_C="drivers/input/touchscreen/fts_521/fts.c"
             if [ -f "$FTS_C" ]; then
-              sed -i '/#include/a\#define Touch_Wgh_Min 0\n#define Touch_Wgh_Max 1\n#define Touch_Wgh_Step 2' "$FTS_C"
+              sed -i '1 i\#define Touch_Wgh_Min 0\n#define Touch_Wgh_Max 1\n#define Touch_Wgh_Step 2' "$FTS_C"
             fi
           fi
 
-      # ========== 解决重复符号冲突（指纹/触摸驱动） ==========
-      - name: 禁用重复驱动，仅保留 umi 所需版本
+      # ========== 解决重复驱动冲突 ==========
+      - name: 禁用冲突驱动并注释 Btrfs 编译
         working-directory: kernel
         run: |
-          # 禁用旧版 goodix 指纹驱动，仅保留 goodix_fod
+          # 指纹驱动冲突：禁用旧版 goodix，保留 goodix_fod
           scripts/config --file out/.config --disable CONFIG_FINGERPRINT_GOODIX
-          # 禁用 focaltech 触摸驱动 (保留 st_fts_v521)
+          # 触摸驱动冲突：禁用 focaltech，保留 st_fts_v521
           scripts/config --file out/.config --disable CONFIG_TOUCHSCREEN_FOCALTECH
           scripts/config --file out/.config --disable CONFIG_TOUCHSCREEN_FOCALTECH_SPI
-          # 非交互刷新配置
+
+          # 直接注释 fs/Makefile 中的 btrfs 目标，彻底排除编译
+          if [ -f fs/Makefile ]; then
+            sed -i '/btrfs/s/^/# /' fs/Makefile
+            echo "Btrfs compilation disabled in fs/Makefile"
+          fi
+
+          # 非交互更新配置
           make O=out ARCH=arm64 olddefconfig </dev/null
 
       # ========== 编译主内核 ==========
