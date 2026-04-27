@@ -50,7 +50,6 @@ jobs:
       - name: 设定 Android 版本及对应 Clang
         id: setup-version
         run: |
-          # 手动触发时使用输入值，否则默认 sixteen-qpr2
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             ANDROID_VER="${{ github.event.inputs.android_version }}"
           else
@@ -58,7 +57,6 @@ jobs:
           fi
           echo "ANDROID_VERSION=${ANDROID_VER}" >> $GITHUB_ENV
 
-          # 统一使用 Clang r547379
           CLANG_VER="r547379"
           CLANG_TARBALL="clang-${CLANG_VER}.tar.gz"
           CLANG_URL="https://github.com/Geeeeeker/boot/releases/download/clang-prebuilts-20260319-031015/${CLANG_TARBALL}"
@@ -71,8 +69,6 @@ jobs:
           repository: Geeeeeker/android_kernel_xiaomi_sm8250-pixelos
           ref: ${{ env.ANDROID_VERSION }}
           path: kernel
-
-      # ========== 源码快速修复（如有需要可在此添加补丁） ==========
 
       # ========== Clang 工具链缓存与下载 ==========
       - name: 缓存 Clang 工具链
@@ -95,8 +91,8 @@ jobs:
           restore-keys: kernel-${{ env.DEVICE }}-${{ env.ANDROID_VERSION }}
           max-size: 5G
 
-      # ========== 内核配置修改 (LXC/Docker) ==========
-      - name: 配置 LXC 和 Docker 内核支持
+      # ========== 内核配置修改 (LXC/Docker + 依赖修复) ==========
+      - name: 配置 LXC 和 Docker 内核支持，并预修复已知问题
         working-directory: kernel
         run: |
           DEFCONFIG="arch/arm64/configs/${{ env.DEFCONFIG }}"
@@ -108,7 +104,13 @@ jobs:
             echo 'source "utils/Kconfig"' >> Kconfig
           fi
 
+          # 添加 Docker 支持
           echo "CONFIG_DOCKER=y" >> "${DEFCONFIG}"
+          # 修复 Docker 对 VLAN_8021Q 的依赖（模块化避免增大内核）
+          echo "CONFIG_VLAN_8021Q=m" >> "${DEFCONFIG}"
+          # 显式禁用 Btrfs ZSTD，防止编译错误
+          echo "# CONFIG_BTRFS_FS_ZSTD is not set" >> "${DEFCONFIG}"
+
           sed -i '/CONFIG_ANDROID_PARANOID_NETWORK/d' "${DEFCONFIG}"
           echo "# CONFIG_ANDROID_PARANOID_NETWORK is not set" >> "${DEFCONFIG}"
 
@@ -145,12 +147,16 @@ jobs:
             arch/arm64/configs/vendor/xiaomi/sm8250-common.config \
             arch/arm64/configs/vendor/xiaomi/umi.config
 
-      # ========== 修复 Btrfs ZSTD 编译错误 ==========
-      - name: 禁用 Btrfs ZSTD 支持（避免 ZSTD 版本不兼容）
+      # ========== 修复配置并去交互化 ==========
+      - name: 确保 Btrfs ZSTD 禁用，补充 VLAN 模块，非交互更新配置
         working-directory: kernel
         run: |
+          # 再次确认禁用 Btrfs ZSTD（万一合并配置重新启用了它）
           scripts/config --file out/.config --disable BTRFS_FS_ZSTD
-          make O=out ARCH=arm64 olddefconfig
+          # VLAN_8021Q 可能未生效，强制设为模块
+          scripts/config --file out/.config --module VLAN_8021Q
+          # 使用 olddefconfig 自动处理所有依赖，管道 /dev/null 避免任何意外等待输入
+          make O=out ARCH=arm64 olddefconfig </dev/null
 
       # ========== 编译主内核 ==========
       - name: 编译内核
@@ -313,14 +319,14 @@ jobs:
           name: kernel-${{ env.DEVICE }}-ak3
           path: anykernel3-*.zip
 
-      # ========== 打包 boot.img (LineageOS) 需自行更换为 umi 对应 boot 镜像 ==========
+      # ========== 打包 boot.img ==========
       - name: 打包 boot.img
         run: |
           git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg mkbootimg
           cp kernel/out/arch/arm64/boot/Image.gz-dtb mkbootimg/
 
           cd mkbootimg
-          # TODO: 请将此 URL 替换为适用于 umi 的 boot.img
+          # TODO: 请替换为 umi 专用 boot.img
           BOOT_IMG_URL="https://github.com/Geeeeeker/boot/releases/download/extracted-roms-20260322-062443/LineageOS_boot.img"
           curl -LSs "$BOOT_IMG_URL" -o boot.img
 
