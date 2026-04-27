@@ -1,4 +1,4 @@
-name: 多系统版本，以此份为基础！boot需要修改为pe官方提供的img！编译内核 ( LXC/Docker + USB/IP + UMI )
+name: boot需要修改为pe官方提供的img！编译内核 ( LXC/Docker + USB/IP + UMI )
 
 on:
   push:
@@ -81,43 +81,6 @@ jobs:
           path: kernel
 
       # ========== 源码快速修复 ==========
-      - name: 修复 atomic_cond_read_relaxed 缺失 (旧内核适配)
-        working-directory: kernel
-        run: |
-          cat >> include/linux/atomic.h << 'ATOMIC_FIX_EOF'
-      
-          #ifndef smp_cond_load_relaxed
-          #define smp_cond_load_relaxed(ptr, cond_expr) ({             \
-              typeof(ptr) __PTR = (ptr);                              \
-              typeof(*ptr) VAL;                                       \
-              for (;;) {                                              \
-                  VAL = READ_ONCE(*__PTR);                            \
-                  if (cond_expr)                                      \
-                      break;                                          \
-                  cpu_relax();                                        \
-              }                                                       \
-              VAL;                                                    \
-          })
-          #endif
-      
-          #ifndef atomic_cond_read_relaxed
-          #define atomic_cond_read_relaxed(v, c)  smp_cond_load_relaxed(&(v)->counter, (c))
-          #endif
-
-          ATOMIC_FIX_EOF
-
-      - name: Fix usbip udev_context if present
-        run: |
-          files=$(find . -name "vhci_driver.c" -type f)
-          if [ -n "$files" ]; then
-            for f in $files; do
-              sed -i 's/^struct udev \*udev_context;/extern struct udev \*udev_context;/' "$f"
-              echo "Fixed $f"
-            done
-          else
-            echo "No vhci_driver.c found, skipping fix"
-          fi
-        working-directory: ${{ github.workspace }}
 
       # ========== Clang 工具链缓存与下载 ==========
       - name: 缓存 Clang 工具链
