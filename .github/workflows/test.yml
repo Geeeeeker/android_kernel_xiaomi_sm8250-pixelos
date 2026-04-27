@@ -141,7 +141,12 @@ jobs:
           ./scripts/kconfig/merge_config.sh -m -O out \
             arch/arm64/configs/stock-defconfig \
             arch/arm64/configs/vendor/xiaomi/sm8250-common.config \
-            arch/arm64/configs/vendor/xiaomi/umi.config
+            arch/arm64/configs/vendor/xiaomi/umi.config \
+            arch/arm64/configs/vendor/xiaomi/docker.config \
+            arch/arm64/configs/vendor/xiaomi/gcc.config \
+            arch/arm64/configs/vendor/xiaomi/kernelsu.config \
+            arch/arm64/configs/vendor/xiaomi/pgsql.config \
+            arch/arm64/configs/vendor/xiaomi/usb.config
 
       # ========== 修复触摸驱动缺失枚举 ==========
       - name: 补充触摸驱动缺失的 Touch_Wgh 枚举成员
