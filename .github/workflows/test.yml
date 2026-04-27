@@ -91,8 +91,8 @@ jobs:
           restore-keys: kernel-${{ env.DEVICE }}-${{ env.ANDROID_VERSION }}
           max-size: 5G
 
-      # ========== 内核配置修改 (LXC/Docker + 依赖修复) ==========
-      - name: 配置 LXC 和 Docker 内核支持，并预修复已知问题
+      # ========== 内核配置修改 (LXC/Docker) ==========
+      - name: 配置 LXC 和 Docker 内核支持
         working-directory: kernel
         run: |
           DEFCONFIG="arch/arm64/configs/${{ env.DEFCONFIG }}"
@@ -104,12 +104,9 @@ jobs:
             echo 'source "utils/Kconfig"' >> Kconfig
           fi
 
-          # 添加 Docker 支持
           echo "CONFIG_DOCKER=y" >> "${DEFCONFIG}"
-          # 修复 Docker 对 VLAN_8021Q 的依赖（模块化避免增大内核）
+          # 修复 Docker 对 VLAN_8021Q 的依赖
           echo "CONFIG_VLAN_8021Q=m" >> "${DEFCONFIG}"
-          # 显式禁用 Btrfs ZSTD，防止编译错误
-          echo "# CONFIG_BTRFS_FS_ZSTD is not set" >> "${DEFCONFIG}"
 
           sed -i '/CONFIG_ANDROID_PARANOID_NETWORK/d' "${DEFCONFIG}"
           echo "# CONFIG_ANDROID_PARANOID_NETWORK is not set" >> "${DEFCONFIG}"
@@ -147,16 +144,14 @@ jobs:
             arch/arm64/configs/vendor/xiaomi/sm8250-common.config \
             arch/arm64/configs/vendor/xiaomi/umi.config
 
-      # ========== 修复配置并去交互化 ==========
-      - name: 确保 Btrfs ZSTD 禁用，补充 VLAN 模块，非交互更新配置
+      # ========== 直接移除 zstd.o 避免编译错误 ==========
+      - name: 注释 zstd.o 编译
         working-directory: kernel
         run: |
-          # 再次确认禁用 Btrfs ZSTD（万一合并配置重新启用了它）
-          scripts/config --file out/.config --disable BTRFS_FS_ZSTD
-          # VLAN_8021Q 可能未生效，强制设为模块
-          scripts/config --file out/.config --module VLAN_8021Q
-          # 使用 olddefconfig 自动处理所有依赖，管道 /dev/null 避免任何意外等待输入
-          make O=out ARCH=arm64 olddefconfig </dev/null
+          # 备份原 Makefile
+          cp fs/btrfs/Makefile fs/btrfs/Makefile.bak
+          # 将包含 zstd.o 的行注释掉
+          sed -i '/zstd\.o/s/^/# /' fs/btrfs/Makefile
 
       # ========== 编译主内核 ==========
       - name: 编译内核
