@@ -153,25 +153,33 @@ jobs:
       - name: 补充触摸驱动缺失的 Touch_Wgh 枚举成员
         working-directory: kernel
         run: |
-          # 搜索可能包含触摸模式枚举的头文件
           TOUCH_HEADER="include/linux/xiaomi_touch.h"
           if [ -f "$TOUCH_HEADER" ]; then
-            # 如果已经定义则跳过
             if grep -q "Touch_Wgh_Min" "$TOUCH_HEADER"; then
               echo "Touch_Wgh_Min already defined"
             else
-              # 在包含 "enum" 和 "touch_mode" 的块中，于闭合 "};" 前插入三个新成员
               sed -i '/^enum.*touch_mode.*{/,/^};/{
                 /^};/i\    Touch_Wgh_Min,\n    Touch_Wgh_Max,\n    Touch_Wgh_Step,
               }' "$TOUCH_HEADER"
             fi
           else
-            # 若无标准头文件，在 fts.c 内用宏定义（赋值需谨慎，此处采用 0,1,2 仅供参考）
             FTS_C="drivers/input/touchscreen/fts_521/fts.c"
             if [ -f "$FTS_C" ]; then
               sed -i '/#include/a\#define Touch_Wgh_Min 0\n#define Touch_Wgh_Max 1\n#define Touch_Wgh_Step 2' "$FTS_C"
             fi
           fi
+
+      # ========== 解决重复符号冲突（指纹/触摸驱动） ==========
+      - name: 禁用重复驱动，仅保留 umi 所需版本
+        working-directory: kernel
+        run: |
+          # 禁用旧版 goodix 指纹驱动，仅保留 goodix_fod
+          scripts/config --file out/.config --disable CONFIG_FINGERPRINT_GOODIX
+          # 禁用 focaltech 触摸驱动 (保留 st_fts_v521)
+          scripts/config --file out/.config --disable CONFIG_TOUCHSCREEN_FOCALTECH
+          scripts/config --file out/.config --disable CONFIG_TOUCHSCREEN_FOCALTECH_SPI
+          # 非交互刷新配置
+          make O=out ARCH=arm64 olddefconfig </dev/null
 
       # ========== 编译主内核 ==========
       - name: 编译内核
